@@ -39,3 +39,28 @@ class UserCreateSerializer(serializers.Serializer):
         validate_password(value)
         return value
 
+
+class ParentRegistrationSerializer(serializers.Serializer):
+    """Public self-registration for parents only.
+
+    Deliberately exposes no role/staff/superuser fields: any such keys sent by
+    a client are ignored by DRF, and the role is assigned server-side.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        if Profile.objects.filter(normalized_email__iexact=email).exists():
+            raise serializers.ValidationError('A user with this email already exists.')
+        return email
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+

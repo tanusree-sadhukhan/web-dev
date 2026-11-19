@@ -9,7 +9,46 @@ from rest_framework_simplejwt.exceptions import TokenError
 
 from .models import Profile
 from .permissions import IsAdmin
-from .serializers import UserCreateSerializer, UserMeSerializer
+from .serializers import ParentRegistrationSerializer, UserCreateSerializer, UserMeSerializer
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_view(request):
+    """Public parent self-registration. Role is always forced to 'parent'."""
+    serializer = ParentRegistrationSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    data = serializer.validated_data
+    normalized_email = data['email'].strip().lower()
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=normalized_email,
+                email=normalized_email,
+                password=data['password'],
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+            )
+            Profile.objects.create(
+                user=user,
+                role='parent',
+                normalized_email=normalized_email,
+            )
+    except Exception:
+        return Response(
+            {'detail': 'Failed to create account.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        'id': user.id,
+        'email': user.email,
+        'role': 'parent',
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+    }, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])

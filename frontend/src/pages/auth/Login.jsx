@@ -1,7 +1,11 @@
 import { useState } from "react";
-import "./Login.css";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/authContext.jsx";
+import "./login.css";
 
 function Login() {
+  const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -10,6 +14,7 @@ function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -22,6 +27,7 @@ function Login() {
     setErrors((previous) => ({
       ...previous,
       [name]: "",
+      general: "",
     }));
   };
 
@@ -43,15 +49,67 @@ function Login() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     if (!validateForm()) {
       return;
     }
 
-    // Authentication API integration will be added later.
-    console.log("Login form validated successfully.");
+    setIsSubmitting(true);
+    setErrors((previous) => ({ ...previous, general: "" }));
+
+    try {
+      const response = await fetch("http://localhost:8000/accounts/login/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const message =
+          data?.detail ||
+          data?.error ||
+          "Invalid email or password.";
+        setErrors((previous) => ({ ...previous, general: message }));
+        return;
+      }
+
+      if (data.access) {
+        localStorage.setItem("accessToken", data.access);
+      }
+      if (data.refresh) {
+        localStorage.setItem("refreshToken", data.refresh);
+      }
+      if (data.user) {
+        localStorage.setItem("user", JSON.stringify(data.user));
+        login(data.user);
+      }
+
+      const role = data.user?.role;
+      const roleDashboards = {
+        admin: "/admin/dashboard",
+        parent: "/parent/dashboard",
+        consultant: "/consultant/dashboard",
+        school: "/school/dashboard",
+        child: "/child/dashboard",
+      };
+      navigate(roleDashboards[role] || "/login", { replace: true });
+    } catch (error) {
+      setErrors((previous) => ({
+        ...previous,
+        general: "Unable to sign in. Please try again.",
+      }));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -172,6 +230,12 @@ function Login() {
               )}
             </div>
 
+            {errors.general && (
+              <span className="form-error" id="general-error">
+                {errors.general}
+              </span>
+            )}
+
             <label className="remember-option">
               <input
                 type="checkbox"
@@ -181,15 +245,15 @@ function Login() {
               <span>Remember me</span>
             </label>
 
-            <button type="submit" className="auth-submit-button">
-              Sign In
+            <button type="submit" className="auth-submit-button" disabled={isSubmitting}>
+              {isSubmitting ? "Signing In..." : "Sign In"}
               <span aria-hidden="true">→</span>
             </button>
           </form>
 
           <p className="auth-switch">
             Don't have an account?{" "}
-            <a href="/register">Create an account</a>
+            <Link to="/register">Create an account</Link>
           </p>
 
           <p className="auth-legal">

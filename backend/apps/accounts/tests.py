@@ -79,6 +79,84 @@ class AccountsAuthTests(APITestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class PublicRegistrationTests(APITestCase):
+    REGISTER_URL = '/accounts/register/'
+    PASSWORD = 'StrongPass123!'
+
+    def test_register_creates_parent_account(self):
+        resp = self.client.post(self.REGISTER_URL, {
+            'email': 'newparent@test.com',
+            'password': self.PASSWORD,
+            'first_name': 'New',
+            'last_name': 'Parent',
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data['role'], 'parent')
+        self.assertNotIn('password', resp.data)
+        user = User.objects.get(email='newparent@test.com')
+        self.assertEqual(user.profile.role, 'parent')
+        self.assertEqual(user.profile.normalized_email, 'newparent@test.com')
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertTrue(user.check_password(self.PASSWORD))
+
+    def test_registration_ignores_privileged_fields(self):
+        resp = self.client.post(self.REGISTER_URL, {
+            'email': 'parentreg@test.com',
+            'password': self.PASSWORD,
+            'role': 'admin',
+            'is_superuser': True,
+            'is_staff': True,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        user = User.objects.get(email='parentreg@test.com')
+        self.assertEqual(user.profile.role, 'parent')
+        self.assertFalse(user.is_superuser)
+        self.assertFalse(user.is_staff)
+
+    def test_registration_normalizes_email(self):
+        resp = self.client.post(self.REGISTER_URL, {
+            'email': '  MixedCase@Test.COM  ',
+            'password': self.PASSWORD,
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        user = User.objects.get(email='mixedcase@test.com')
+        self.assertEqual(user.profile.normalized_email, 'mixedcase@test.com')
+
+    def test_registration_rejects_duplicate_email(self):
+        existing = User.objects.create_user(
+            username='taken@test.com', email='taken@test.com', password='Pass1234!'
+        )
+        Profile.objects.create(user=existing, role='parent', normalized_email='taken@test.com')
+        resp = self.client.post(self.REGISTER_URL, {
+            'email': 'TAKEN@TEST.COM',
+            'password': self.PASSWORD,
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_registration_rejects_weak_password(self):
+        resp = self.client.post(self.REGISTER_URL, {
+            'email': 'weakpw@test.com',
+            'password': '123',
+        }, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(User.objects.filter(email='weakpw@test.com').exists())
+
+    def test_login_succeeds_after_registration(self):
+        reg = self.client.post(self.REGISTER_URL, {
+            'email': 'loginparent@test.com',
+            'password': self.PASSWORD,
+        }, format='json')
+        self.assertEqual(reg.status_code, 201)
+        resp = self.client.post('/accounts/login/', {
+            'email': 'LOGINPARENT@TEST.COM',
+            'password': self.PASSWORD,
+        }, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['user']['role'], 'parent')
+        self.assertIn('access', resp.data)
+
+
 class AdminPermissionTests(APITestCase):
     def test_superuser_with_admin_role_allowed(self):
         user = User.objects.create_superuser(username='sup@t.com', email='sup@t.com', password='Pass1234!')
